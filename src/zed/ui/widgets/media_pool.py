@@ -184,10 +184,21 @@ class MediaPoolWidget(QWidget):
     
     def add_media(self, path: str, display_name: str = None):
         """Add a media file to the pool."""
+        # Check if already exists
+        for i in range(self.media_list.count()):
+            existing_item = self.media_list.item(i)
+            existing_path = existing_item.data(Qt.ItemDataRole.UserRole)
+            if existing_path == path:
+                # Already exists, select it and return
+                self.media_list.setCurrentItem(existing_item)
+                return
+        
         display = display_name or path.split("/")[-1]
         item = QListWidgetItem(f"📄 {display}")
         item.setData(Qt.ItemDataRole.UserRole, path)
         self.media_list.addItem(item)
+        # Select the newly added item
+        self.media_list.setCurrentItem(item)
     
     def clear_media(self):
         """Clear all media items."""

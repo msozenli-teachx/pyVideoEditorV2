@@ -364,12 +364,12 @@ class PreviewAreaWidget(QWidget):
     def on_position_update(self, time: float):
         """
         Called by PlaybackController when position changes.
+        Seeks the video to the specified time.
         
         Args:
             time: Current position in seconds
         """
         # Update timecode display
-        # (In real app, this would also trigger frame decoding/rendering)
         if self._duration > 0:
             current_str = self._format_time(time)
             total_str = self._format_time(self._duration)
@@ -382,6 +382,11 @@ class PreviewAreaWidget(QWidget):
             self.scrubber.blockSignals(True)
             self.scrubber.setValue(int(frac * 1000))
             self.scrubber.blockSignals(False)
+        
+        # CRITICAL: Actually seek the video player to this position
+        if self._media_player and HAS_QT_MULTIMEDIA:
+            seek_ms = int(time * 1000)
+            self._media_player.setPosition(seek_ms)
     
     def set_duration(self, duration: float):
         """Set the media duration (called when video is loaded)."""

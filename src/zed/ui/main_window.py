@@ -338,6 +338,11 @@ class MainWindow(QMainWindow):
             lambda frac: self._playback_controller.seek_normalized(frac)
         )
         
+        # Timeline click → seek to exact time (seconds)
+        self.timeline.time_selected.connect(
+            lambda time_sec: self._playback_controller.seek(time_sec)
+        )
+        
         # Controls → Controller (if duration changes via process panel)
         # (Optional: could sync controls with controller if needed)
     
@@ -544,15 +549,18 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"File not found: {path}", 3000)
             return
         
+        # Probe for actual duration
+        duration = self._probe_video_duration(path)
+        
         # Add as a new clip to timeline
         clip = self.timeline.add_clip_from_source(
             source_file=path,
             start_time=0.0,
-            end_time=60.0,
+            end_time=duration,
             name=Path(path).stem
         )
         self.timeline.select_clip(clip.id)
-        self.status_bar.showMessage(f"Added to timeline: {Path(path).name}", 3000)
+        self.status_bar.showMessage(f"Added to timeline: {Path(path).name} ({duration:.1f}s)", 3000)
     
     def _load_video_path(self, path: str):
         """Common handler to load a video path."""
@@ -563,17 +571,63 @@ class MainWindow(QMainWindow):
         # Add to media pool so user can see/manage imported files
         self.media_pool.add_media(path)
         
+        # Probe video for actual duration
+        duration = self._probe_video_duration(path)
+        
+        # Update timeline and playback controller with actual duration
+        self.timeline.set_duration(duration)
+        if self._playback_controller:
+            self._playback_controller.set_duration(duration)
+        
         # Add to timeline as a clip (track 0 = video)
-        # For now, use default timing - full video assumed
-        # In future, we could probe the file to get actual duration
         clip = self.timeline.add_clip_from_source(
             source_file=path,
             start_time=0.0,
-            end_time=60.0,  # Default 60s - will be overridden by user
+            end_time=duration,  # Use actual video duration
             name=Path(path).stem
         )
         # Auto-select this new clip
         self.timeline.select_clip(clip.id)
+    
+    def _probe_video_duration(self, path: str) -> float:
+        """
+        Probe video file to get actual duration.
+        
+        Args:
+            path: Path to video file
+            
+        Returns:
+            Duration in seconds (defaults to 60.0 if probe fails)
+        """
+        try:
+            engine = self._get_ffmpeg_engine()
+            probe_data = engine.probe(path)
+            
+            # Try to get duration from format
+            duration = None
+            if 'format' in probe_data and 'duration' in probe_data['format']:
+                duration = float(probe_data['format']['duration'])
+            
+            # Fallback to first video stream duration
+            if duration is None and 'streams' in probe_data:
+                for stream in probe_data['streams']:
+                    if stream.get('codec_type') == 'video' and 'duration' in stream:
+                        duration = float(stream['duration'])
+                        break
+            
+            if duration and duration > 0:
+                self.status_bar.showMessage(
+                    f"Loaded: {Path(path).name} ({duration:.1f}s)", 3000
+                )
+                return duration
+            
+        except Exception as e:
+            self.status_bar.showMessage(
+                f"Could not probe duration for {Path(path).name}: {e}", 5000
+            )
+        
+        # Default fallback
+        return 60.0
     
     def _get_ffmpeg_engine(self) -> FFmpegEngine:
         """Lazy-create the FFmpeg engine."""
